@@ -55,8 +55,8 @@ var tokens = map[string]lexemes{
 	"ALPHABET":     Alphabet + "_",
 	"NUMERALS":     Numerals,
 	"ALPHANUMERIC": Alphabet + Numerals + "_",
-	"ARTOPERATOR":  []string{"+", "-", "*", "/", "%", "+=", "-=", "*=", "/=", "%="},
-	"LOGOPERATOR":  []string{"!=", ">", "<", ">=", "<=", "&&", "||", "!", "=="},
+	"ARTOPERATOR":  []string{"+", "-", "*", "/", "%", "+=", "-=", "*=", "/=", "%=", "++", "--"},
+	"LOGOPERATOR":  []string{"!=", ">", "<", ">=", "<@=", "&&", "||", "!", "=="},
 	"BITOPERATOR":  []string{"&", "|", "^", "~", ">>", "<<", "<<=", ">>=", "&=", "^=", "|="},
 	"DELIMITERS":   []string{"[", "]", "(", ")", "{", "}"},
 	"STRUCT":       []string{"->", "."},
@@ -103,15 +103,17 @@ func (self *Lex) Scanning() {
 	combuf := new(bool) // se activa /* y se desactiva */
 
 	for read.Scan() {
+		trim := string(strings.TrimSpace(read.Text()))
+		sizeline := len(trim)
+
 		self.line++
-		sizeline := len(strings.TrimSpace(read.Text()))
 
 		if sizeline != 0 &&
-			self.elementIsNotComment(string(read.Text()), combuf) &&
-			string(read.Text()[0]) != "#" {
-			chunk := string(strings.TrimSpace(read.Text()))
+			self.elementIsNotComment(strings.Split(trim, " "), combuf) &&
+			string(read.Text()[0]) != "#" &&
+			trim != "*/" {
 
-			self.Analyze(strings.Split(chunk, ""))
+			self.Analyze(strings.Split(trim, ""))
 		}
 	}
 
@@ -121,17 +123,24 @@ func (self *Lex) Scanning() {
 }
 
 // Indentifica si la línea es un comentario
-func (self *Lex) elementIsNotComment(text string, combuf *bool) bool {
+func (self *Lex) elementIsNotComment(text []string, combuf *bool) bool {
 	switch {
-	case text == "/*":
+	case text[0] == "/*":
 		*combuf = true
 		return false
-	case text == "*" && *combuf == true:
+	case text[0] == "*" && *combuf == true:
 		return false
-	case text == "*/":
+	case func() bool {
+		for _, val := range text {
+			if val == "/*" {
+				return true
+			}
+		}
+		return false
+	}():
 		*combuf = false
 		return false
-	case text == "//":
+	case text[0] == "//":
 		return false
 	}
 
@@ -163,6 +172,9 @@ func (self *Lex) Analyze(char []string) {
 
 		case self.lexemeInToken(char[i], tokens["BITOPERATOR"].([]string)):
 			self.isBitOperator(&i, char)
+
+		case self.lexemeInToken(char[i], tokens["ARTOPERATOR"].([]string)):
+			self.isArtOperator(&i, char)
 
 		case char[i] == "?":
 			self.printLexeme("?", "TEROPERATOR")
@@ -219,7 +231,24 @@ func (self *Lex) isLiteral(i *int, char []string) {
 }
 
 // Imprime el lexeme y el token para operadores aritméticos
-func (self *Lex) isArtOperator(i *int, char []string) {}
+func (self *Lex) isArtOperator(i *int, char []string) {
+	lexeme := ""
+	alphanum := strings.Split(tokens["ALPHANUMERIC"].(string), "")
+
+	for {
+		lexeme += char[*i]
+		*i++
+
+		if self.lexemeInToken(char[*i], tokens["DELIMITERS"].([]string)) ||
+			self.lexemeInToken(char[*i], tokens["SEPARATORS"].([]string)) ||
+			self.lexemeInToken(char[*i], alphanum) {
+			break
+		}
+	}
+	*i--
+
+	self.printLexeme(lexeme, "ARTOPERATOR")
+}
 
 // Imprime el lexeme y el token para operadores de bits
 func (self *Lex) isBitOperator(i *int, char []string) {
@@ -245,6 +274,7 @@ func (self *Lex) isLogOperator(i *int, char []string) {
 	}
 }
 
+// Imprime el lexeme y el token de las keywords.
 func (self *Lex) isKeyword(char string) {
 	self.printLexeme(char, "KEYWORD")
 }
@@ -299,6 +329,7 @@ func main() {
 	lex.OpenFile("c.c")
 	defer lex.CloseFile()
 	lex.Scanning()
-
-	// fmt.Println(tokens["COMMENT"].([]string)[0])
 }
+
+// TODO: corregir los comentarios
+//		 verificar que cuando b++ sacar el operador ++
